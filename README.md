@@ -5,7 +5,7 @@ implementation for Assignment 3. The overall roadmap is in [PLAN.md](PLAN.md).
 
 ## What works now
 
-The offline starter uses only the Python standard library (Python 3.10+):
+The offline starter uses only the Python standard library (Python 3.9+):
 
 - `netlab/measurements.py`: calculates acknowledged goodput and interval
   retransmissions from cumulative counters and actual elapsed time.
@@ -17,33 +17,29 @@ The offline starter uses only the Python standard library (Python 3.10+):
 Live iperf3 transfers, Linux TCP_INFO decoding, plotting, and Docker support are
 still to be implemented. Schedule entries are plans, not measured results.
 
-## Linux environment and SSH
+## Linux environment
 
-See [docs/environment.md](docs/environment.md) for the current Ubuntu VM details,
-Mac-to-Ubuntu SSH command, initial repository transfer, and remaining checks.
-The documented kernel and congestion-control values were observed in a user
-screenshot; live socket selection and TCP_INFO decoding still need verification.
+Live experiments require a Linux kernel with the requested congestion-control
+algorithms available. See [docs/environment.md](docs/environment.md) for generic
+Linux setup, optional SSH access, and the remaining environment checks.
 
-## Try this on macOS while Ubuntu installs
+## Quick start
 
-From this repository's directory:
+The offline planner and tests also run on macOS. From this repository's directory:
 
 ```bash
 python3 --version
 python3 -m unittest discover -s tests -v
-python3 run.py plan --servers configs/servers.example.csv --destinations 2 --duration 10 --interval 0.2 --repetitions 3 --algorithms cubic reno bbr --seed 422
+python3 run.py plan --destinations 2 --duration 10 --interval 0.2 --repetitions 3 --algorithms cubic reno bbr --seed 422
 ```
 
-The example file uses reserved `.example` hosts, not public iperf3 servers.
-Create `configs/servers.csv` with real hostnames and ports selected from
-https://iperf3serverlist.net/ before preparing real experiments. The planner does
-not test whether servers are reachable or whether algorithms exist on the kernel.
+The default file is `configs/listed_iperf3_servers.csv`, a bundled public
+server list from [iperf3serverlist.net](https://iperf3serverlist.net/). The parser
+accepts its `IP/HOST` and `PORT` columns and ignores other metadata. Port ranges
+such as `5201-5210` count as one server row; the planner chooses one port uniformly within the range and reuses it for every algorithm
+and repetition. The planner does not test server reachability or kernel support.
 
-```csv
-host,port
-server-a.example,5201
-server-b.example,5202
-```
+Use `--servers path/to/another.csv` to override the default.
 
 The same seed and inputs produce the same schedule. Two destinations, three
 algorithms, and three repetitions produce 18 runs. At 10 seconds each, their
@@ -67,16 +63,16 @@ When the Linux sampler is added, take these counters from the data socket and
 establish the payload baseline so iperf3's connection cookie is excluded. Do not
 use bytes passed to `send()` as acknowledged bytes.
 
-## Next work
+## Remaining implementation
 
-1. Review the two small modules and reproduce the goodput calculation by hand.
-2. Prepare the real server CSV and try different schedule sizes/seeds.
-3. Define the full sample CSV schema (run ID, destination, algorithm, timestamp,
-   cwnd, RTT, counters, interval metrics, units, and phase).
-4. Add summary statistics and plots that consume saved samples; they can be
-   developed on macOS using clearly labeled synthetic fixtures.
-5. In Ubuntu, verify congestion control availability, implement the iperf3
-   protocol, and connect the live TCP_INFO sampler to these helpers.
+1. Verify Linux socket algorithm selection and the required TCP_INFO fields.
+2. Implement a complete Python iperf3 upload, including negotiation, result
+   exchange, termination, and bounded error handling.
+3. Add live data-socket sampling and CSV/JSON logging with explicit units,
+   destination, algorithm, run ID, and transfer phase.
+4. Add summary statistics and PDF plots from saved samples.
+5. Add bounded destination replacements and repeated algorithm comparisons.
+6. Add the Ubuntu 24.04 Docker image, full pipeline command, and reports.
 
 Algorithm names are configuration values, so Reno, BBR, and a future registered
 custom algorithm can reuse the same runner. The planner's sequential schedule

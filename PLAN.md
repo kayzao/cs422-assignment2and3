@@ -1,23 +1,20 @@
 # Assignment 2 and 3 implementation plan
 
-Planning date: October 16, 2026. This is a plan, not implemented or validated software.
-
-The repository initially contains only README.md. Both assignments list October 21, 2026 at 11:45 PM Eastern as their deadline. Protect October 19-20 for Assignment 3 and October 21 for reruns and reports. Do not spend the whole remaining schedule polishing Assignment 2.
-
-Decisions from the user: development machine is an M5 MacBook Air running macOS; a Linux environment is still needed; keep both Assignment 3 implementation options open.
+This document describes planned implementation and acceptance criteria. See
+[README.md](README.md) for the components currently implemented. Reserve time
+for Assignment 3, repeated experiments, and both final reports.
 
 ## 1. Environment first
 
-Recommended arrangement:
-- macOS for editing and Git.
-- UTM running Ubuntu Server 24.04 ARM64 as a full Linux guest.
-- Python experiments and Docker Engine run inside that Linux guest.
-- Assignment 3's kernel/eBPF code, if selected, runs against the guest kernel.
-- ns-3, if selected, can use the same Linux guest with a separate build environment.
+Use a Linux machine or Linux VM for live TCP experiments and Docker Engine.
+Offline planning, analysis development, and editing can also run on macOS.
+A Linux guest should use an architecture supported by the virtualization host.
+Assignment 3's kernel/eBPF implementation, if selected, must match the execution
+kernel; ns-3 can use a separate build environment on the same Linux machine.
 
-UTM: choose Virtualize -> Linux and an ARM64 Ubuntu ISO. As a provisional starting allocation, use 4 vCPUs, 4 GB RAM, and 40 GB disk, adjusting for available host memory. Ubuntu Server is sufficient; a desktop GUI is optional. Use Git/SSH or a shared directory to make the repository available inside the guest. Install Docker Engine in Ubuntu; containers share the guest kernel and do not need another full VM.
-
-Do not install or reconfigure anything on the Mac as part of this planning step. Before installing, check whether UTM or another suitable Linux VM already exists.
+See [docs/environment.md](docs/environment.md) for generic setup and SSH
+instructions. Keep local account names, addresses, and personal setup notes
+outside tracked documentation.
 
 Environment acceptance gate:
 - Record uname -r, uname -m, Ubuntu version, Python version, Git commit, and Docker version.
@@ -54,7 +51,7 @@ Proposed structure; create components as they are needed, not empty placeholders
         experiments.py           # destinations, repetitions, ordering, failures
         analysis.py              # statistics and PDF plots from saved data
     configs/
-        servers.csv              # host,port plus optional provenance
+        listed_iperf3_servers.csv # bundled public server list; default candidate source
         experiments.json         # saved experiment settings
     tests/                       # focused protocol/decoder/calculation checks
     docs/
@@ -158,7 +155,7 @@ Decoder acceptance gate:
 
 Proposed CLI shape:
     python run.py check
-    python run.py run --servers configs/servers.csv --destinations 1 --duration 10 --interval 0.2 --repetitions 1 --algorithms cubic
+    python3 run.py plan --destinations 1 --duration 10 --interval 0.2 --repetitions 1 --algorithms cubic
     python run.py analyze --results results/<experiment-id>
 
 Later, the same run command accepts --algorithms cubic reno bbr, or an arbitrary registered custom algorithm name. Provide a single command/config that runs the entire required pipeline, including analysis, without manual file editing.
@@ -218,19 +215,25 @@ A3 Option 2:
 - Measure receiver-observed completion times, unfinished flows, mean and p99; use TcpNewReno as the Reno baseline.
 - Reuse analysis conventions and report automation, but keep flow completion data separate from live TCP_INFO samples.
 
-Do not implement both Assignment 3 paths. Choose by the end of October 17 after a short feasibility check. Keeping options open in the shared client should not become a generic simulation framework.
+Choose one Assignment 3 path after an early feasibility check. Keeping options open in the shared client should not become a generic simulation framework.
 
-## 8. Schedule and completion checkpoints
+## 8. Completion checkpoints
 
-These are planning targets, not guarantees; protocol and kernel setup are the main unknowns.
+These checkpoints describe the intended development order. Protocol and kernel
+setup remain the main unknowns.
 
-- Oct 16 evening: Linux VM and environment gate; protocol research; first handshake if time allows.
-- Oct 17: complete one short end-to-end iperf3 transfer, validate TCP_INFO, and produce one destination's seven plots. Decide A3 path after a minimal build/load or ns-3 build check.
-- Oct 18: finish A2 destination automation, multi-algorithm runs, and design pseudocode. Draft the A2 report as measurements arrive.
-- Oct 19-20: implement and evaluate A3; allow time for kernel or simulation debugging and reruns.
-- Oct 21: clean reproduction runs, final plots/analysis, repository links, separate PDF reports, and oral-exam preparation. Avoid major new features.
+1. Verify the Linux environment and algorithm availability.
+2. Complete one short iperf3 transfer, validate TCP_INFO, and generate one
+   destination's seven plots. Check feasibility of the selected Assignment 3 path.
+3. Finish destination automation, repeated algorithm comparisons, and congestion
+   algorithm pseudocode. Draft the Assignment 2 report as measurements arrive.
+4. Implement and evaluate the chosen Assignment 3 route, allowing time for
+   kernel or simulation debugging and reruns.
+5. Run final reproduction checks and finish both PDF reports and code links.
 
-If an Oct 17 checkpoint slips: reduce nonessential plotting polish and the configurable destination count first. Preserve correctness, all required metrics, all baseline algorithms, repetitions, and the A3 workload requirements.
+If a checkpoint slips, reduce plot styling and the configurable destination
+count first. Preserve correctness, required metrics, baseline algorithms,
+repetitions, and the Assignment 3 workload requirements.
 
 ## 9. Submission and verification checklist
 
@@ -244,9 +247,9 @@ If an Oct 17 checkpoint slips: reduce nonessential plotting polish and the confi
 
 ## Sources
 
-Assignment requirements were checked against the user's local assignment-2.pdf and assignment-3.pdf. The public technical references below inform implementation planning; pin source revisions during implementation.
+The Assignment 2 and Assignment 3 handouts are the requirements source. The public technical references below inform implementation planning; pin source revisions during implementation.
 
-- UTM Ubuntu guide (guide title is 22.04; use it for VM workflow, with the selected 24.04 ARM64 image): https://docs.getutm.app/guides/ubuntu/
+- UTM Ubuntu VM guide: https://docs.getutm.app/guides/ubuntu/
 - Ubuntu 24.04 image directory: https://download.cdimage.ubuntu.com/ubuntu/releases/24.04/release/
 - Docker Engine on Ubuntu, including ARM64: https://docs.docker.com/engine/install/ubuntu/
 - iperf3 protocol overview (older overview; verify exact details against source): https://github.com/esnet/iperf/wiki/IperfProtocolStates

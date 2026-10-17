@@ -2,3 +2,9 @@ __pycache__/
 *.py[cod]
 .venv/
 .DS_Store
+
+# Local credentials and machine-specific setup notes
+.env
+.env.*
+!.env.example
+/docs/environment.local.md
