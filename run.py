@@ -9,22 +9,26 @@ from netlab.experiments import build_plan, load_servers
 
 
 def main() -> None:
-    # A2's report requires one entry point for the pipeline. Subcommands let us
-    # add live transfers and analysis later while keeping offline planning usable.
+    # Use subcommands to add live transfers and analysis later
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
     plan = commands.add_parser("plan", help="print a schedule without contacting servers")
-    # A2 Q1(b): accept server addresses/ports and a configurable destination count.
-    plan.add_argument("--servers", type=Path, required=True)
+
+    # accept server addresses/ports and a configurable destination count.
+    # Default to the uploaded list beside this script; allow alternate lists too.
+    default_servers = Path(__file__).resolve().parent / "configs" / "listed_iperf3_servers.csv"
+    plan.add_argument("--servers", type=Path, default=default_servers)
     plan.add_argument("--destinations", type=int, default=10)
-    # nargs="+" accepts multiple names, e.g. --algorithms cubic reno bbr (A2 Q3).
-    # CUBIC alone is the initial choice for Q2; this planner does not select sockets.
+
+    # CUBIC alone is the initial choice for Q2, no selection of sockets
     plan.add_argument("--algorithms", nargs="+", default=["cubic"])
-    # A2 requires configurable duration, sampling interval, and repetitions.
+
+    # configurable duration, sampling interval, and repetitions.
     # These defaults are choices for our tool, not mandatory assignment values.
     plan.add_argument("--duration", type=float, default=60)
     plan.add_argument("--interval", type=float, default=0.2)
     plan.add_argument("--repetitions", type=int, default=3)
+
     # Saving a seed lets us reproduce the random destinations and initial order.
     plan.add_argument("--seed", type=int, default=422)
     args = parser.parse_args()

@@ -20,6 +20,19 @@ class ExperimentTests(unittest.TestCase):
             [Server("A.example", 5201), Server("2001:db8::1", 5202)],
         )
 
+    def test_actual_uploaded_server_list_format_and_ranges(self):
+        # The uploaded file has uppercase headers, IP/HOST, metadata, and ranges.
+        path = Path(__file__).resolve().parents[1] / "configs" / "listed_iperf3_servers.csv"
+        servers = load_servers(path)
+        self.assertEqual(len(servers), 183)
+        self.assertEqual(servers[0], Server("160.242.19.254", 9210, 9240))
+        self.assertEqual(servers[2], Server("41.110.39.130", 5201))
+
+    def test_port_ranges_are_validated(self):
+        for ports in ("5210-5201", "0-3", "65535-65536", "5201-", "-5201", "5201-5202-5203"):
+            with self.subTest(ports=ports), self.assertRaises(ValueError):
+                self.load_csv(f"IP/HOST,PORT,GB/S\nhost.example,{ports},10\n")
+
     def test_invalid_csv_is_rejected(self):
         for content in (
             "address,port\na.example,5201\n", "host,port\na.example,0\n",
@@ -36,7 +49,7 @@ class ExperimentTests(unittest.TestCase):
             duration_s=10, interval_s=0.2, repetitions=3, seed=422,
         )
         arguments.update(overrides)
-        return build_plan([Server(f"s{i}.example", 5201) for i in range(5)], **arguments)
+        return build_plan([Server(f"s{i}.example", 5201, 5210) for i in range(5)], **arguments)
 
     def test_reproducible_matched_schedule_and_rotating_order(self):
         # A2 Q3(a): same selected endpoints for each algorithm, repeated runs,
@@ -48,6 +61,13 @@ class ExperimentTests(unittest.TestCase):
         self.assertEqual(result["active_transfer_seconds"], 180)
         selected = {s["host"] for s in result["selected_destinations"]}
         self.assertEqual({r["destination_host"] for r in result["runs"]}, selected)
+        endpoints = {(s["host"], s["port"]) for s in result["selected_destinations"]}
+        self.assertEqual(len(endpoints), 2)
+        self.assertTrue(all(5201 <= port <= 5210 for _, port in endpoints))
+        self.assertTrue(all(
+            (r["destination_host"], r["destination_port"]) in endpoints
+            for r in result["runs"]
+        ))
         for host in selected:
             first_positions = []
             for repetition in range(1, 4):
