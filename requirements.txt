@@ -1,0 +1,6 @@
+# Protocol, sampling, scheduling, and statistics use the standard library.
+# Keep Python 3.9 offline support; newer Python uses a release with 3.14 ARM64 wheels.
+matplotlib==3.9.4; python_version < "3.10"
+matplotlib==3.10.8; python_version >= "3.10"
+# Avoid parser API deprecation noise with the older Matplotlib branch.
+pyparsing>=2.3.1,<3.3
