@@ -4,6 +4,11 @@ This document describes planned implementation and acceptance criteria. See
 [README.md](README.md) for the components currently implemented. Reserve time
 for Assignment 3, repeated experiments, and both final reports.
 
+Current code includes the Python iperf3 upload, Linux TCP_INFO decoder/header
+check, interval sampling, bounded replacements, saved logs, statistics, plots,
+and a Dockerfile. Local checks do not replace live validation on the execution
+Linux kernel, public-server runs, Docker validation, or report interpretation.
+
 ## 1. Environment first
 
 Use a Linux machine or Linux VM for live TCP experiments and Docker Engine.

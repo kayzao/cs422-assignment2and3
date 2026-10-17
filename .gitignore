@@ -8,3 +8,7 @@ __pycache__/
 .env.*
 !.env.example
 /docs/environment.local.md
+
+# Generated measurements and ad-hoc offline plans; publish reviewed data explicitly
+/results/
+/plan.json

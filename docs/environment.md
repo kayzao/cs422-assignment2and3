@@ -26,7 +26,8 @@ Record the OS, kernel, architecture, Python version, container configuration,
 and algorithms with the final results. Verify each requested algorithm can be
 selected and read back on a data socket before collecting comparison data.
 Validate TCP_INFO field layout, returned length, and units against that kernel.
-These socket checks are not implemented by the offline planner.
+Run `python3 run.py check` to perform the algorithm and header checks.
+The offline planner remains independent of these Linux facilities.
 
 If BBR is provided as a loadable module, it may need to be loaded after boot:
 
@@ -79,8 +80,17 @@ already exist:
 scp -r ./cs422-assignment2and3 linux-user@vm-host:~/
 ```
 
-For later updates, use Git push/pull or an explicit sync workflow that preserves
-any independent VM changes.
+For later updates, use Git push/pull. If all source editing stays on the
+same development machine, the following incremental copy can also be run from
+its repository directory. It replaces corresponding source files in the VM;
+keep independent VM source edits elsewhere before syncing.
+
+```bash
+rsync -av --exclude='.git/' --exclude='.venv/' --exclude='__pycache__/' --exclude='results/' --exclude='.env*' --exclude='environment.local.md' ./ linux-user@vm-host:~/cs422-assignment2and3/
+```
+
+This copy preserves the VM's Git metadata and results. For final reproducible
+experiments, use matching committed source revisions on both machines.
 
 ## Run the offline starter on Linux
 
@@ -88,8 +98,11 @@ Inside Ubuntu:
 
 ```bash
 sudo apt update
-sudo apt install -y python3 python3-venv python3-pip git build-essential
+sudo apt install -y python3 python3-venv git build-essential linux-libc-dev
 cd ~/cs422-assignment2and3
+python3 -m venv .venv
+source .venv/bin/activate
+python3 -m pip install -r requirements.txt
 python3 -m unittest discover -s tests -v
 python3 run.py plan --destinations 2 --duration 10 --interval 0.2 --repetitions 3 --algorithms cubic reno bbr
 ```
@@ -98,18 +111,24 @@ The default server list is `configs/listed_iperf3_servers.csv`. Use
 `--servers path/to/file.csv` to select another list. Planning makes no network
 connections and does not validate live iperf3 behavior or algorithm support.
 
-## Remaining environment and integration work
+## Validate live execution
 
-1. Implement and validate data-socket algorithm selection and TCP_INFO decoding.
-2. Install Docker Engine in Linux using the
-   [official Ubuntu instructions](https://docs.docker.com/engine/install/ubuntu/),
-   then build the required Ubuntu 24.04 image once its Dockerfile is implemented.
-3. Implement a complete short Python upload to a standard public iperf3 server,
-   including result exchange and termination.
-4. Attach sampling of acknowledged bytes, cwnd, RTT, and a documented loss proxy
-   to the data socket; feed cumulative counters into `netlab/measurements.py`.
-5. Add raw logs, summary statistics, PDF plots, and bounded retries/replacements.
-6. Collect repeated CUBIC/Reno/BBR experiments under the same recorded settings.
+After the offline tests pass, run inside Linux:
+
+```bash
+python3 run.py check
+python3 run.py run --destinations 1 --duration 10 --interval 0.2 --repetitions 1 --algorithms cubic --max-attempts 6 --output results/first-cubic
+```
+
+Review the manifest, raw samples, and generated plots. A successful check proves
+local socket selection and structure layout; a complete live run additionally
+checks counter progress and actual iperf3 interoperability. Treat failed or
+shortfall experiments as incomplete, even if they left partial sample files.
+
+Install Docker Engine using the
+[official Ubuntu instructions](https://docs.docker.com/engine/install/ubuntu/),
+then use the Docker commands in the README to validate container execution.
+The image uses the Linux host kernel, including its available algorithms.
 
 For Assignment 3, choose one implementation route after a minimal kernel/eBPF
 build/load check or stable ns-3 build. Keep machine-specific addresses, account

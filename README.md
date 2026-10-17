@@ -1,79 +1,167 @@
 # cs422-assignment2and3
 
-TCP measurement experiments for Assignment 2 and a future congestion controller
-implementation for Assignment 3. The overall roadmap is in [PLAN.md](PLAN.md).
+A Python iperf3-compatible TCP upload client and measurement pipeline for
+Assignment 2, with configuration and saved-data formats reusable for Assignment
+3. The [implementation roadmap](PLAN.md) also covers the later algorithm work.
 
-## What works now
+## Current implementation
 
-The offline starter uses only the Python standard library (Python 3.9+):
+- `plan`: seeded destination/port selection and repeated algorithm schedules.
+- `check`: Linux socket algorithm selection and a C-checked TCP_INFO decoder.
+- `run`: complete single-stream iperf3 uploads, live sampling, bounded failure
+  handling and replacements, raw logs, summary tables, PDF plots, and observation
+  notes in one command.
+- `analyze`: regenerate tables and figures from saved data without network access.
 
-- `netlab/measurements.py`: calculates acknowledged goodput and interval
-  retransmissions from cumulative counters and actual elapsed time.
-- `netlab/experiments.py`: reads server-list CSV files and builds a reproducible
-  schedule with the same destinations for every algorithm. It rotates algorithm
-  order across repetitions.
-- `run.py plan`: prints that schedule as JSON without opening network connections.
+Parts 1 and 2's implementation is present. Live public-server measurements,
+Linux runtime validation on the execution machine, Docker execution, and the
+report's interpretation must be completed before treating the assignment as done.
+Local protocol interoperability can be checked against an unmodified iperf3
+server; synthetic test counters are never assignment measurements. See the
+[Parts 1 and 2 requirement audit](docs/assignment2-validation.md) for the exact
+coverage, verification evidence, and remaining execution/report tasks.
 
-Live iperf3 transfers, Linux TCP_INFO decoding, plotting, and Docker support are
-still to be implemented. Schedule entries are plans, not measured results.
+## Install
 
-## Linux environment
+Live experiments require Linux with the requested congestion algorithms
+available. Offline planning, tests, and analysis also run on macOS. See
+[environment setup](docs/environment.md) for generic Linux and SSH instructions.
 
-Live experiments require a Linux kernel with the requested congestion-control
-algorithms available. See [docs/environment.md](docs/environment.md) for generic
-Linux setup, optional SSH access, and the remaining environment checks.
-
-## Quick start
-
-The offline planner and tests also run on macOS. From this repository's directory:
+Inside Ubuntu:
 
 ```bash
-python3 --version
+sudo apt update
+sudo apt install -y python3 python3-venv git build-essential linux-libc-dev
+python3 -m venv .venv
+source .venv/bin/activate
+python3 -m pip install -r requirements.txt
 python3 -m unittest discover -s tests -v
-python3 run.py plan --destinations 2 --duration 10 --interval 0.2 --repetitions 3 --algorithms cubic reno bbr --seed 422
+python3 run.py check --algorithms cubic
 ```
 
-The default file is `configs/listed_iperf3_servers.csv`, a bundled public
-server list from [iperf3serverlist.net](https://iperf3serverlist.net/). The parser
-accepts its `IP/HOST` and `PORT` columns and ignores other metadata. Port ranges
-such as `5201-5210` count as one server row; the planner chooses one port uniformly within the range and reuses it for every algorithm
-and repetition. The planner does not test server reachability or kernel support.
+The default test run skips the optional official-server interoperability test
+unless `IPERF3_SERVER_BINARY` is supplied; this does not require installing an
+iperf3 client for normal experiments. `check` without `--algorithms` verifies
+CUBIC, Reno, and BBR for the later comparisons.
 
-Use `--servers path/to/another.csv` to override the default.
+`check` changes no kernel settings. If an algorithm is unavailable, configure
+the Linux host before running its experiments; a container shares that kernel.
 
-The same seed and inputs produce the same schedule. Two destinations, three
-algorithms, and three repetitions produce 18 runs. At 10 seconds each, their
-active transfer budget would be 180 seconds, excluding setup, retries, and cleanup.
+## First short experiment: Parts 1 and 2
 
-## Understand the measurement calculation
+```bash
+python3 run.py run --destinations 1 --duration 10 --interval 0.2 --repetitions 1 --algorithms cubic --max-attempts 6 --output results/first-cubic
+```
 
-If the acknowledged-byte counter rises from 1,000 to 101,000 bytes over 0.25
-seconds, interval goodput is:
+This command contacts public servers and generates all output automatically.
+The output directory must be new. A nonzero exit status indicates a destination
+shortfall, interruption, invalid configuration, or another execution error;
+inspect the manifest and attempt logs. Public-server restrictions and changes
+in availability may require replacements.
+
+For the larger Q1/Q2 dataset, choose a destination count, duration, and repetition
+count you can justify, for example:
+
+```bash
+python3 run.py run --destinations 3 --duration 60 --interval 0.2 --repetitions 3 --algorithms cubic --output results/cubic-study
+```
+
+The assignment permits more or fewer than the suggested 10 destinations. The
+defaults are 10 destinations, 60 seconds, 0.2-second intervals, 3 repetitions,
+and CUBIC. These are configurable choices rather than fixed assignment values.
+
+## Output
 
 ```text
-8 * (101000 - 1000) / 0.25 = 3,200,000 bits/second
+results/<experiment>/
+    manifest.json               configuration, kernel, algorithms, actual order
+    servers.csv                 input list used by this experiment
+    samples.csv                 raw baseline/transfer/drain measurements
+    events.jsonl                protocol states and failures, without payloads
+    attempts.jsonl              destination attempts and replacement outcomes
+    runs/run-0001.json          individual run metadata and server results
+    summary.csv                 min/median/mean/p95 by destination and algorithm
+    per_run_summary.csv         the same statistics for individual runs
+    observations.md             metric explanations and measured observation notes
+    plots/
+        goodput-destination-001.pdf
+        representative-timeseries.pdf   four metric panels
+        representative-scatter.pdf      three relationship panels
 ```
 
-The code deliberately preserves zero-goodput intervals. It rejects decreasing
-counters and non-increasing timestamps, which require a new baseline or a
-recorded sampling error. The first snapshot is a baseline, not a zero-rate sample.
-Retransmissions are a documented loss proxy, not an exact packet-loss probability.
+Results are ignored by Git because they can be large and require review before
+publication. Preserve the real raw data for submission and explicitly add the
+reviewed experiment directory if publishing it with the repository. Generated
+metadata uses input basenames and hashes rather than personal home paths.
 
-When the Linux sampler is added, take these counters from the data socket and
-establish the payload baseline so iperf3's connection cookie is excluded. Do not
-use bytes passed to `send()` as acknowledged bytes.
+The representative destination is the first complete matched set. Invalid or
+incomplete sets remain in raw logs but are excluded from accepted-run summaries.
+Details of the counter layout, units, interval formula, loss proxy, percentile
+method, and final-interval policy are in [measurements.md](docs/measurements.md).
 
-## Remaining implementation
+Regenerate output offline:
 
-1. Verify Linux socket algorithm selection and the required TCP_INFO fields.
-2. Implement a complete Python iperf3 upload, including negotiation, result
-   exchange, termination, and bounded error handling.
-3. Add live data-socket sampling and CSV/JSON logging with explicit units,
-   destination, algorithm, run ID, and transfer phase.
-4. Add summary statistics and PDF plots from saved samples.
-5. Add bounded destination replacements and repeated algorithm comparisons.
-6. Add the Ubuntu 24.04 Docker image, full pipeline command, and reports.
+```bash
+python3 run.py analyze --results results/first-cubic
+```
 
-Algorithm names are configuration values, so Reno, BBR, and a future registered
-custom algorithm can reuse the same runner. The planner's sequential schedule
-also avoids deliberately making local tests compete with one another.
+The observation notes contain measured facts and metric explanations. Review the
+seven panels and add your interpretation of anomalies and congestion avoidance
+to the final report; generated correlations do not establish their cause.
+
+## Planning and command-line options
+
+```bash
+python3 run.py plan --destinations 2 --duration 10 --interval 0.2 --repetitions 3 --algorithms cubic reno bbr --seed 422
+python3 run.py run --help
+```
+
+The bundled list `configs/listed_iperf3_servers.csv` comes from
+[iperf3serverlist.net](https://iperf3serverlist.net/). Use `--servers path/to/list.csv`
+to override it. `host,port` and `IP/HOST,PORT` headers are accepted. Inclusive
+port ranges count as one candidate; one port is chosen and reused for its runs.
+
+`--destinations`, `--duration`, `--interval`, `--repetitions`, `--algorithms`,
+and `--seed` configure both planning and execution. `--max-attempts` bounds
+candidate destination sets, defaulting to three times the requested count.
+`--timeout`, `--drain-timeout`, `--stall-timeout`, `--pause`, and `--backoff`
+bound protocol waits and control spacing between attempts.
+
+The offline plan makes no connections. Live execution groups runs by destination
+so a complete matched set can be accepted before moving to the next destination;
+the manifest records the actual order and any replacements.
+
+## Docker
+
+Run Docker Engine on Linux. Build from a committed source revision:
+
+```bash
+docker build --build-arg SOURCE_COMMIT="$(git rev-parse HEAD)" -t cs422-netlab .
+docker run --rm cs422-netlab check
+mkdir -p results
+docker run --rm --network host -v "$PWD/results:/results" cs422-netlab run --destinations 1 --duration 10 --interval 0.2 --repetitions 1 --algorithms cubic --max-attempts 6 --output /results/docker-first
+```
+
+The Dockerfile uses `FROM ubuntu:24.04`; its default command runs the full
+CUBIC/Reno/BBR pipeline. The Linux host must supply the algorithms and required
+TCP_INFO fields. Record the container network mode and VM network configuration
+with final results. The image contains no iperf3 client executable.
+
+## Code responsibilities and later work
+
+| Module | Responsibility |
+| --- | --- |
+| `run.py` | Command-line options and dispatch |
+| `netlab/experiments.py` | CSV input and reproducible planning |
+| `netlab/protocol.py` | iperf3 framing, states, bounded connection operations |
+| `netlab/transfer.py` | One upload and data-socket sampling |
+| `netlab/tcp_info.py` | Linux decoding and algorithm/header checks |
+| `netlab/measurements.py` | Counter differences and goodput calculation |
+| `netlab/runner.py` | Repetitions, replacements, logs, and pipeline orchestration |
+| `netlab/analysis.py` | Offline statistics, plots, and observation notes |
+
+See [protocol-notes.md](docs/protocol-notes.md) for the pinned upstream references
+and protocol-only interoperability check. Assignment 2 Part 3 still needs the
+actual algorithm-comparison study and your congestion-control design. The same
+runner accepts `--algorithms cubic reno bbr` and a future registered custom
+algorithm; implementing the custom controller remains Assignment 3 work.
