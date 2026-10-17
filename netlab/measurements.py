@@ -1,6 +1,6 @@
 """Convert cumulative TCP counters into interval measurements.
 
-This module is independent of Linux. A later TCP_INFO sampler supplies
+This module is independent of Linux. The TCP_INFO sampler supplies
 snapshots; the iperf3 client is responsible for the payload-phase baseline.
 """
 
@@ -11,7 +11,7 @@ import math
 @dataclass(frozen=True)
 class CounterSnapshot:
     # One reading from one data socket. frozen=True prevents accidental edits to
-    # a saved baseline. TCP_INFO sampling itself will be implemented on Linux.
+    # a saved baseline. tcp_info.py supplies live snapshots on linux.
     # elapsed_s must come from a monotonic clock relative to the run's start.
     elapsed_s: float
     # These totals accumulate over the connection; they are not interval rates.
