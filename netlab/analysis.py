@@ -1,4 +1,4 @@
-"""Offline A2 Q1 tables, Q2 PDF figures, and measured observation notes."""
+"""Offline A2 Q1 tables, Q2 PDF figures, and measurement validation."""
 
 # tools for saved measurements, grouping samples, and calculating summary statistics
 import csv
@@ -43,7 +43,7 @@ def ensure_plotting():
 
 
 # finds a percentile by interpolating between sorted sample values
-# called by summarize for q1(c)'s p95 table; the chosen method is also recorded in the report notes
+# called by summarize for q1(c)'s p95 table; docs/measurements.md documents the method
 def percentile(values: list[float], fraction: float) -> float:
     """Type-7 percentile: linearly interpolate at index (n - 1) * fraction."""
     # reject an empty dataset or invalid percentile before sorting and interpolating
@@ -56,7 +56,7 @@ def percentile(values: list[float], fraction: float) -> float:
 
 
 # calculates goodput and rtt statistics for one destination/algorithm group or one run
-# called during analysis for q1(c) tables and the measured facts used in q2(c) notes
+# called during analysis for q1(c) tables and per-run comparisons
 def summarize(rows: list[dict]) -> dict:
     # collect the interval values and actual durations for this destination/algorithm or run
     goodput = [row["goodput_bps"] for row in rows]
@@ -130,108 +130,7 @@ def load_samples(output: Path, manifest: dict) -> list[dict]:
     return rows
 
 
-# calculates pearson correlation, returning no value when a variable is constant
-# called while writing observation notes as an optional aid for q2(c) interpretation
-def correlation(xs, ys):
-    # measure association around each variable's mean; constant values have no defined correlation
-    mean_x, mean_y = statistics.mean(xs), statistics.mean(ys)
-    dx, dy = [x - mean_x for x in xs], [y - mean_y for y in ys]
-    denominator = math.sqrt(sum(x*x for x in dx) * sum(y*y for y in dy))
-    return sum(x*y for x, y in zip(dx, dy)) / denominator if denominator else None
-
-
-# builds notes explaining the metrics and describing the saved measurements
-# called during analysis to provide a starting point for the student's q2(c) observations
-def observation_notes(rows: list[dict], representative: dict, manifest: dict) -> str:
-    # start with metric explanations, destination counts, and the analysis inclusion policy
-    notes = [
-        "# Measurement observations for Assignment 2",
-        "",
-        "These notes summarize saved measurements. Review the figures and add your",
-        "interpretation of the particular paths, anomalies, and run-to-run variability.",
-        "",
-        f"Successful destinations: {len(manifest['successful_destinations'])} / {manifest['requested_destinations']}.",
-        f"Destination shortfall: {manifest.get('destination_shortfall', 0)}.",
-        "",
-        "## What the metrics mean",
-        "",
-        "- Congestion window is the sender's allowed outstanding data, in segments.",
-        "  An approximate window-limited rate is cwnd * MSS * 8 / RTT; receiver",
-        "  windows, application limits, and path capacity can impose lower rates.",
-        "- RTT includes propagation and queueing. Rising RTT can be consistent with",
-        "  queue buildup, but Internet path changes and scheduling can also affect it.",
-        "- Interval retransmissions are a loss proxy, not a packet-loss probability.",
-        "  Recovery can reduce goodput. Zero retransmissions alone do not prove an",
-        "  uncongested path; reordering and spurious retransmissions complicate interpretation.",
-        "- Goodput is newly acknowledged application bytes * 8 / actual interval time.",
-        "  It measures successful TCP delivery acknowledgments rather than send-buffer writes.",
-        "- The bandwidth-delay product is bandwidth * RTT (in bytes after unit",
-        "  conversion); enough in-flight data is needed to utilize a path.",
-        "",
-        "## Sample policy",
-        "",
-        "Tables and figures use active-transfer intervals from accepted, complete",
-        "matched destination sets. Baselines, drain intervals, failed runs, and",
-        "completed runs from incomplete destination sets remain in the raw logs",
-        "but are excluded. Zero-goodput intervals and the final partial interval",
-        "are retained. Arithmetic means and percentiles give every interval equal",
-        "weight; a separate time-weighted goodput mean is also reported. Percentiles",
-        "use linear interpolation at index (n-1)*p, also called type 7.",
-        "",
-    ]
-    # surface q1(a/b) accounting and selection limitations before interpreting q2 plots
-    quality = validation_report(manifest)
-    notes += ["## Validation and exclusions", "",
-              f"Validation status: {quality['status']}.",
-              f"Final-block byte-count warnings: {quality['byte_count_warnings']}.",
-              f"Unexplained byte-count mismatches in accepted runs: {quality['byte_count_errors']}.",
-              f"Byte checks unavailable: {quality['byte_count_unavailable']}.",
-              f"Failed runs: {len(quality['failed_runs'])}; completed but excluded runs: "
-              f"{len(quality['completed_but_excluded_runs'])}.",
-              "See validation.json for per-run byte counts, failure stages, and queue snapshots.",
-              "Offline audits preserve original acceptance; unexplained byte-count errors need review",
-              "before using an older experiment's tables. Final-block warnings do not prove data loss.",
-              quality["selection_note"] + ".", ""]
-    # report the lack of completed data rather than inventing observations or figures
-    if not representative:
-        notes += ["No destination completed a full matched set; no measured figures were generated."]
-        return "\n".join(notes) + "\n"
-    notes += ["## Representative destination", "",
-              f"{representative['host']}:{representative['port']}; selected by the recorded",
-              "first-completed-matched-set rule, before comparing performance.", ""]
-    # restrict measured observations to the recorded representative destination and group by algorithm
-    grouped = defaultdict(list)
-    for row in rows:
-        if (row["destination_host"] == representative["host"] and
-                row["destination_port"] == representative["port"]):
-            grouped[row["algorithm_actual"]].append(row)
-    # describe measured ranges, zero-goodput intervals, and retransmissions for q2(c)
-    for algorithm, group in sorted(grouped.items()):
-        summary = summarize(group)
-        cwnd = [row["snd_cwnd_segments"] for row in group]
-        rtt = [row["rtt_us"] / 1000 for row in group]
-        goodput = [row["goodput_bps"] for row in group]
-        zero_count = sum(value == 0 for value in goodput)
-        notes += [f"### {algorithm}", "",
-                  f"- Runs: {summary['successful_runs']}; intervals: {len(group)}.",
-                  f"- Mean goodput: {summary['mean_goodput_bps']/1e6:.3f} Mbit/s; "
-                  f"p95: {summary['p95_goodput_bps']/1e6:.3f} Mbit/s.",
-                  f"- Sampled cwnd range: {min(cwnd):g}–{max(cwnd):g} segments.",
-                  f"- Sampled RTT range: {min(rtt):.3f}–{max(rtt):.3f} ms.",
-                  f"- Retransmissions during active samples: {summary['retrans_segments']:g}; "
-                  f"zero-goodput intervals: {zero_count}."]
-        # add optional correlations as descriptive evidence for reviewing the scatter plots
-        for key, label, _ in METRICS[:3]:
-            value = correlation([row[key] for row in group], goodput)
-            description = "undefined (a variable is constant)" if value is None else f"{value:.3f}"
-            notes.append(f"- Pearson correlation, {label} vs goodput: {description}.")
-        notes += ["", "Correlations describe association. Explain any visible recovery episodes,",
-                  "RTT changes, startup effects, and variation between repetitions using",
-                  "the actual time series; these data alone do not identify their cause.", ""]
-    return "\n".join(notes) + "\n"
-
-
-# reads saved data and generates tables, observation notes, and all required pdf plots
+# reads saved data and generates validation, summary tables, and all required pdf plots
 # called after live execution or by run.py analyze; provides q1(c) and q2(b) outputs offline
 def analyze_results(output: Path) -> dict:
     # read the saved configuration and measurements without opening any network connection
@@ -246,13 +145,12 @@ def analyze_results(output: Path) -> dict:
     for row in rows:
         by_endpoint[(row["destination_host"], row["destination_port"], row["algorithm_actual"])].append(row)
         by_run[row["run_id"]].append(row)
-    # write q1(c) tables and q2(c) starting notes before making the figures
+    # write q1(c) summary tables before making the figures
     summaries = [summarize(group) for _, group in sorted(by_endpoint.items())]
     run_summaries = [{"run_id": key, **summarize(group)} for key, group in sorted(by_run.items())]
     write_table(output / "summary.csv", summaries, SUMMARY_FIELDS)
     write_table(output / "per_run_summary.csv", run_summaries, ["run_id"] + SUMMARY_FIELDS)
     representative = manifest.get("representative_destination")
-    (output / "observations.md").write_text(observation_notes(rows, representative, manifest))
     # prepare the plot directory; no accepted samples means there are no measured plots to generate
     plots = output / "plots"
     plots.mkdir(exist_ok=True)

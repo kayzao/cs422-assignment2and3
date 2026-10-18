@@ -90,12 +90,11 @@ class AnalysisTests(unittest.TestCase):
             self.assertEqual(len(result["plots"]), 3)
             for name in result["plots"]:
                 self.assertTrue((path / name).read_bytes().startswith(b"%PDF"))
-            self.assertIn("zero-goodput intervals: 1", (path / "observations.md").read_text())
+            self.assertFalse((path / "observations.md").exists())
             quality = json.loads((path / "validation.json").read_text())
             self.assertEqual(quality["accepted_runs"], 1)
             self.assertEqual(quality["byte_count_unavailable"], 1)
             self.assertEqual(result["validation_status"], "review_required")
-            self.assertIn("Validation and exclusions", (path / "observations.md").read_text())
 
 
 if __name__ == "__main__":

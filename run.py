@@ -100,7 +100,7 @@ def main() -> int:
                 raise ValueError("specify at least one algorithm")
             print(json.dumps(check_environment(args.algorithms, ROOT), indent=2, allow_nan=False))
 
-        # if analyze, regenerate tables, plots, and observation notes from saved
+        # if analyze, regenerate tables, plots, and validation from saved
         # measurements. This command can run offline, including on macOS.
         elif args.command == "analyze":
             from netlab.analysis import analyze_results

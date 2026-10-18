@@ -39,7 +39,7 @@ outside this audit's completion scope.
 | Document kernel decoding, interval formula, and loss proxy | `measurements.md`, C layout helper, environment manifest, observed returned lengths | Reference-source review and fixtures passed; installed Linux header check pending |
 | Q2(b)(i): cwnd, RTT, loss-proxy, and throughput time series | Four panels in `representative-timeseries.pdf` | PDF generation and visual review passed |
 | Q2(b)(ii): cwnd/goodput, RTT/goodput, loss/goodput scatter plots | Three panels in `representative-scatter.pdf` | PDF generation and visual review passed |
-| Q2(c): explain metric meanings, effects in congestion avoidance, and actual anomalies | Generated `observations.md` provides definitions, measured facts, and correlation notes | Starting material implemented; the student must interpret real traces in the final report |
+| Q2(c): explain metric meanings, effects in congestion avoidance, and actual anomalies | Raw measurements, summary tables, and figures provide the evidence; docs/measurements.md documents units and calculations | The student writes metric explanations and interprets real traces in the final report |
 | Single entry point, raw data, options, dependencies, reproduction | `run.py run` executes transfers and analysis; `analyze` replays saved data; README documents settings | Offline CLI, dependency checks, and complete local pipeline check passed |
 | Ubuntu 24.04 Docker image and host-kernel information | Dockerfile uses `FROM ubuntu:24.04`; manifest stores kernel, layout, and congestion-control configuration | Files reviewed; Docker build/run pending on a supported Linux host |
 | Final PDF with plots, code links, interpretation, AI acknowledgment | Outputs and documentation provide inputs for the report | Final submission artifact and oral-exam preparation remain student work |
@@ -52,7 +52,7 @@ outside this audit's completion scope.
   result exchange, and termination with this Python client. Only its server
   mode was invoked; no iperf3 client executable performed the experiment.
 - A complete local pipeline check exercised standard-server protocol behavior,
-  raw CSV logging, accepted-run metadata, statistics, notes, and PDF generation.
+  raw CSV logging, accepted-run metadata, statistics, validation, and PDF generation.
 - Those local protocol/pipeline checks used explicitly synthetic counters on
   macOS. They do not prove the execution kernel's counter layout, units, or
   accuracy, and their data are not assignment measurements.

@@ -9,8 +9,8 @@ Assignment 2, with configuration and saved-data formats reusable for Assignment
 - `plan`: seeded destination/port selection and repeated algorithm schedules.
 - `check`: Linux socket algorithm selection and a C-checked TCP_INFO decoder.
 - `run`: complete single-stream iperf3 uploads, live sampling, bounded failure
-  handling and replacements, raw logs, summary tables, PDF plots, and observation
-  notes in one command.
+  handling and replacements, raw logs, summary tables, PDF plots, and validation
+  in one command.
 - `analyze`: regenerate tables and figures from saved data without network access.
 
 Parts 1 and 2's implementation is present. Live public-server measurements,
@@ -82,7 +82,6 @@ results/<experiment>/
     runs/run-0001.json          individual run metadata and server results
     summary.csv                 min/median/mean/p95 by destination and algorithm
     per_run_summary.csv         the same statistics for individual runs
-    observations.md             metric explanations and measured observation notes
     validation.json             byte-count checks, failed stages, and queue diagnostics
     plots/
         goodput-destination-001.pdf
@@ -120,9 +119,9 @@ now records pending payload bytes, unsent bytes, unacknowledged segments, and th
 exact result-exchange step when available. These distinguish unfinished delivery
 from a server that has not replied after all payload was acknowledged.
 
-The observation notes contain measured facts and metric explanations. Review the
-seven panels and add your interpretation of anomalies and congestion avoidance
-to the final report; generated correlations do not establish their cause.
+For Q2(c), explain the metrics and interpret anomalies and congestion avoidance
+in your final report, using the generated tables and seven plot panels. The
+program produces measurements and figures; it does not write report observations.
 
 ## Planning and command-line options
 
@@ -176,7 +175,7 @@ with final results. The image contains no iperf3 client executable.
 | `netlab/tcp_info.py` | Linux decoding and algorithm/header checks |
 | `netlab/measurements.py` | Counter differences and goodput calculation |
 | `netlab/runner.py` | Repetitions, replacements, logs, and pipeline orchestration |
-| `netlab/analysis.py` | Offline statistics, plots, and observation notes |
+| `netlab/analysis.py` | Offline statistics, plots, and validation output |
 | `netlab/validation.py` | Receiver byte checks and experiment failure/accounting audits |
 
 See [protocol-notes.md](docs/protocol-notes.md) for the pinned upstream references

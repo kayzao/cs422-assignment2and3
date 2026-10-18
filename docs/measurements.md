@@ -77,9 +77,10 @@ paths, and environment-variable dumps are excluded from generated metadata.
 `events.jsonl` stores protocol states and failure stages; `attempts.jsonl` stores
 destination-attempt starts and outcomes. Per-run JSON files retain server results,
 byte-count assessment, accounting warnings, and queue snapshots on timeouts.
-`validation.json` audits accepted byte counts and lists failed and excluded runs;
-`observations.md` surfaces its counts and selection limitations. Older manifests
-can be audited without changing their original acceptance decisions.
+`validation.json` audits accepted byte counts and lists failed and excluded runs.
+Older manifests can be audited without changing their original acceptance
+decisions. Use these diagnostics to document warnings and selection limitations
+in the final report.
 
 ## Inclusion and statistics
 
@@ -117,9 +118,8 @@ and goodput. Three scatter panels compare cwnd, RTT, and retransmissions against
 goodput. Different algorithms use consistent row scales, and repetitions are
 separate traces rather than one concatenated timeline.
 
-`observations.md` gives metric explanations, inclusion rules, measured ranges,
-zero-rate intervals, retransmission totals, and correlations. Add your own
-interpretation of actual anomalies and congestion-avoidance behavior for Q2(c).
-Correlation alone does not establish causation. Internet paths, VM scheduling,
-and container/VM network configuration can change between runs; record the
-configuration and discuss those limitations in the report.
+For Q2(c), write your metric explanations and interpretation of anomalies and
+congestion-avoidance behavior in the final report, using the saved measurements,
+summary tables, and figures. Internet paths, VM scheduling, and container/VM
+network configuration can change between runs; record the configuration and
+discuss those limitations in the report.
