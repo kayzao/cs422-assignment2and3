@@ -35,7 +35,10 @@ complete result exchange and termination, not just send some bytes.
 6. At the configured duration, stop sending. Sample while pending payload is
    acknowledged, up to the configured drain timeout. These samples have a
    separate phase and are excluded from active-transfer summaries.
-7. Send `TEST_END` (4), receive `EXCHANGE_RESULTS` (13), send client results,
+7. Half-close the data socket's write side with `shutdown(SHUT_WR)` after the
+   payload ACK drain. This signals EOF to a receiver waiting for a partial final
+   block; the FIN is outside all measurement samples. Send `TEST_END` (4),
+   receive `EXCHANGE_RESULTS` (13), send client results,
    and read server results. Result objects use the same length-prefixed framing.
 8. Receive `DISPLAY_RESULTS` (14), close the data socket, send `IPERF_DONE`
    (16), and wait for the server to close its control connection.
@@ -45,6 +48,15 @@ actual congestion algorithm, and the required per-stream fields. Its `bytes`
 field describes payload accepted by `send()`, as expected by iperf3. Assignment
 goodput is calculated separately from acknowledged-byte differences.
 
+Receiver byte counts must be positive whole numbers. Exact agreement is recorded
+as `exact`. A smaller count is accepted with a `partial_block` warning only when
+it equals `floor(sent / 131072) * 131072` and differs by less than one block.
+This observed pattern suggests final-read accounting, but does not prove its
+cause. Any other discrepancy fails at `result_validation`; it is not hidden by
+a percentage tolerance. The raw receiver result and both counts remain saved.
+The server's `congestion_used` field describes its own socket; the actual upload
+algorithm is read back from the client's data socket.
+
 ## Failure handling
 
 - Read a state as a signed byte so access denial (-1) and server errors (-2)
@@ -53,11 +65,18 @@ goodput is calculated separately from acknowledged-byte differences.
   application message boundaries. Reject oversized, truncated, or invalid JSON,
   including numbers that overflow to nonfinite Python floats.
 - Apply absolute deadlines to each message operation and bounded connection,
-  DNS resolution, payload-stall, and drain waits.
+  DNS resolution, payload-stall, and drain waits. Connection/setup defaults to
+  8 seconds, final result operations to 15 seconds, and ACK draining to 30
+  seconds. The separate result budget avoids treating a receiver's final-read
+  wait as a slow connection attempt; it remains configurable and bounded.
 - Keep sampling when the send buffer is full. Independently check ACK progress
   at the stall deadline when the sampling interval is longer than that timeout.
   Treat an early data-socket close or unexpected control state as a failed run.
 - Save the failure stage, reason, protocol events, and any samples already read.
+  Also retain sent/acknowledged/pending payload totals, drain elapsed time, and
+  the most recent unsent bytes, unacknowledged segments, cwnd, RTT, and
+  retransmission counter. Result waits identify whether the client was waiting
+  for `EXCHANGE_RESULTS`, server JSON, or `DISPLAY_RESULTS`.
   The destination runner tries a different candidate within `--max-attempts`.
 - Accept a destination only when all its configured algorithm/repetition runs
   complete. A replacement gets a new full matched set; partial sets remain in
@@ -70,7 +89,11 @@ are logged as failures and replaced.
 ## Verification scope
 
 The automated suite checks fragmented frames, truncated/oversized JSON,
-signed server errors, timeout behavior, and destination replacement. An optional
+signed server errors, timeout behavior, and destination replacement. Focused
+synthetic receiver checks require data EOF before results, delay final responses,
+return final-block or unexplained byte discrepancies, and leave payload pending
+to check drain-failure diagnostics. These are protocol fixtures, not measured
+Internet results. An optional
 test runs an unmodified local iperf3 server in server mode only:
 
 ```bash

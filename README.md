@@ -83,6 +83,7 @@ results/<experiment>/
     summary.csv                 min/median/mean/p95 by destination and algorithm
     per_run_summary.csv         the same statistics for individual runs
     observations.md             metric explanations and measured observation notes
+    validation.json             byte-count checks, failed stages, and queue diagnostics
     plots/
         goodput-destination-001.pdf
         representative-timeseries.pdf   four metric panels
@@ -105,6 +106,20 @@ Regenerate output offline:
 python3 run.py analyze --results results/first-cubic
 ```
 
+`validation.json` distinguishes exact sender/server byte agreement from a
+server count ending at the last complete 128 KiB block. The latter produces a
+visible warning; other byte-count mismatches fail new runs and trigger destination
+replacement. Older experiments are audited without changing their original
+acceptance decisions. Offline analysis also checks every saved goodput value
+against its acknowledged-byte delta and actual sampling interval.
+
+A `review_required` validation status can accompany a complete experiment.
+Inspect warnings, failed runs, and excluded destination sets before writing the
+report; it does not automatically invalidate the accepted measurements. A timeout
+now records pending payload bytes, unsent bytes, unacknowledged segments, and the
+exact result-exchange step when available. These distinguish unfinished delivery
+from a server that has not replied after all payload was acknowledged.
+
 The observation notes contain measured facts and metric explanations. Review the
 seven panels and add your interpretation of anomalies and congestion avoidance
 to the final report; generated correlations do not establish their cause.
@@ -124,8 +139,11 @@ port ranges count as one candidate; one port is chosen and reused for its runs.
 `--destinations`, `--duration`, `--interval`, `--repetitions`, `--algorithms`,
 and `--seed` configure both planning and execution. `--max-attempts` bounds
 candidate destination sets, defaulting to three times the requested count.
-`--timeout`, `--drain-timeout`, `--stall-timeout`, `--pause`, and `--backoff`
-bound protocol waits and control spacing between attempts.
+`--timeout` defaults to 8 seconds for connections and setup. `--result-timeout`
+defaults to 15 seconds for each final result/termination operation, and
+`--drain-timeout` defaults to 30 seconds for pending payload acknowledgments.
+`--stall-timeout` defaults to 15 seconds without acknowledged-payload progress.
+`--pause` and `--backoff` control spacing between transfers and attempts.
 
 The offline plan makes no connections. Live execution groups runs by destination
 so a complete matched set can be accepted before moving to the next destination;
@@ -159,6 +177,7 @@ with final results. The image contains no iperf3 client executable.
 | `netlab/measurements.py` | Counter differences and goodput calculation |
 | `netlab/runner.py` | Repetitions, replacements, logs, and pipeline orchestration |
 | `netlab/analysis.py` | Offline statistics, plots, and observation notes |
+| `netlab/validation.py` | Receiver byte checks and experiment failure/accounting audits |
 
 See [protocol-notes.md](docs/protocol-notes.md) for the pinned upstream references
 and protocol-only interoperability check. Assignment 2 Part 3 still needs the

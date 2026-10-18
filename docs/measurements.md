@@ -52,7 +52,9 @@ The iperf data cookie is fully acknowledged before the payload baseline. This
 also puts connection setup outside the measured payload interval. The baseline
 row has blank goodput and zero interval duration; it is not a zero-rate sample.
 Decreasing counters and non-increasing timestamps fail the run rather than
-producing misleading negative rates.
+producing misleading negative rates. Offline analysis independently checks the
+saved goodput against its byte delta and actual interval, rejecting inconsistent
+CSV rows.
 
 The retransmission delta is a **loss proxy**, not an exact count of original
 packet drops or a loss probability. Reordering and spurious retransmissions can
@@ -73,7 +75,11 @@ versions, source revision, and source-list hash. The input CSV is copied to
 `servers.csv`. Account names, hostnames of the execution machine, absolute home
 paths, and environment-variable dumps are excluded from generated metadata.
 `events.jsonl` stores protocol states and failure stages; `attempts.jsonl` stores
-destination-attempt starts and outcomes. Per-run JSON files retain server results.
+destination-attempt starts and outcomes. Per-run JSON files retain server results,
+byte-count assessment, accounting warnings, and queue snapshots on timeouts.
+`validation.json` audits accepted byte counts and lists failed and excluded runs;
+`observations.md` surfaces its counts and selection limitations. Older manifests
+can be audited without changing their original acceptance decisions.
 
 ## Inclusion and statistics
 
@@ -84,8 +90,16 @@ destination-attempt starts and outcomes. Per-run JSON files retain server result
   The requested count, successful count, and shortfall are explicit.
 - Baseline and drain samples are excluded from active-transfer statistics.
   Drain ACKs describe delivery after sending has stopped; keeping them separate
-  avoids extending the configured active-transfer period in the plots.
+  avoids extending the configured active-transfer period in the plots. The
+  data socket is write-shut down only after the last ACK sample, so its FIN
+  cannot enter the payload byte deltas.
 - Valid zero-goodput intervals and final partial intervals are retained.
+- A receiver count missing only the final partial 128 KiB block is retained
+  with an accounting warning; an unexplained mismatch fails a new run. Exact
+  TCP acknowledgment totals and receiver application read totals are distinct.
+- Failure/replacement logs are part of the evidence. Requiring every repetition
+  to finish can favor reliable destinations; report these exclusions rather
+  than treating the accepted set as an unbiased sample of all Internet paths.
 - `summary.csv` pools active intervals by destination and actual algorithm;
   `per_run_summary.csv` preserves per-run results.
 - Minimum, median, arithmetic mean, and p95 operate on interval goodput values

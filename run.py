@@ -59,7 +59,9 @@ def main() -> int:
     # Bound connection/control waits, the wait for remaining payload ACKs after
     # sending stops, and the time allowed without acknowledged-payload progress.
     live.add_argument("--timeout", type=float, default=8, help="connection/control operation timeout in seconds")
-    live.add_argument("--drain-timeout", type=float, default=5, help="maximum time to wait for queued payload ACKs")
+    live.add_argument("--drain-timeout", type=float, default=30, help="maximum time to wait for queued payload ACKs")
+    # allow the receiver's final read to finish without lengthening connection attempts
+    live.add_argument("--result-timeout", type=float, default=15, help="timeout for each final result/termination operation")
     live.add_argument("--stall-timeout", type=float, default=15, help="maximum time without acknowledged-payload progress")
 
     # Space out successful transfers and failed destination attempts instead of
@@ -111,7 +113,7 @@ def main() -> int:
 
             # Reject invalid wait settings before execution. Timeouts must be
             # positive and finite; optional pauses/backoff may also be zero.
-            for name in ("timeout", "drain_timeout", "stall_timeout", "pause", "backoff"):
+            for name in ("timeout", "drain_timeout", "result_timeout", "stall_timeout", "pause", "backoff"):
                 value = getattr(args, name)
                 if not math.isfinite(value) or value < 0 or (name not in ("pause", "backoff") and value == 0):
                     raise ValueError(f"{name.replace('_', '-')} must be finite and "

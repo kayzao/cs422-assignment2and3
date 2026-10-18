@@ -58,6 +58,23 @@ class AnalysisTests(unittest.TestCase):
 
 
 
+    def test_saved_goodput_must_match_acked_bytes_and_actual_interval(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory)
+            manifest = synthetic_results(path)
+            samples = path / "samples.csv"
+            with samples.open(newline="") as handle:
+                reader = csv.DictReader(handle)
+                fields = reader.fieldnames
+                rows = list(reader)
+            rows[1]["goodput_bps"] = "80000000"
+            with samples.open("w", newline="") as handle:
+                writer = csv.DictWriter(handle, fieldnames=fields)
+                writer.writeheader()
+                writer.writerows(rows)
+            with self.assertRaisesRegex(ValueError, "goodput disagrees"):
+                load_samples(path, manifest)
+
     def test_offline_outputs_include_all_seven_representative_panels(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory)
@@ -74,6 +91,11 @@ class AnalysisTests(unittest.TestCase):
             for name in result["plots"]:
                 self.assertTrue((path / name).read_bytes().startswith(b"%PDF"))
             self.assertIn("zero-goodput intervals: 1", (path / "observations.md").read_text())
+            quality = json.loads((path / "validation.json").read_text())
+            self.assertEqual(quality["accepted_runs"], 1)
+            self.assertEqual(quality["byte_count_unavailable"], 1)
+            self.assertEqual(result["validation_status"], "review_required")
+            self.assertIn("Validation and exclusions", (path / "observations.md").read_text())
 
 
 if __name__ == "__main__":

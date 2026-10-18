@@ -17,6 +17,7 @@ import uuid
 from .experiments import Server, build_plan, load_servers
 from .tcp_info import check_environment
 from .transfer import SAMPLE_FIELDS, TransferError, run_transfer, utc_now
+from .validation import validation_report
 
 
 # writes a complete json file through a temporary file, then replaces the previous copy
@@ -89,6 +90,7 @@ def run_experiment(args, root: Path) -> tuple[Path, bool]:
                    "repetitions": args.repetitions, "seed": args.seed,
                    "max_attempts": args.max_attempts, "timeout_s": args.timeout,
                    "drain_timeout_s": args.drain_timeout, "stall_timeout_s": args.stall_timeout,
+                   "result_timeout_s": getattr(args, "result_timeout", 15),
                    "pause_s": args.pause, "backoff_s": args.backoff},
         # store input provenance without exporting a developer's home directory.
         "server_list": {"name": args.servers.name,
@@ -160,12 +162,24 @@ def run_experiment(args, root: Path) -> tuple[Path, bool]:
                     # run one transfer and preserve either its successful result or its failure details
                     try:
                         result = run_transfer(run, args.duration, args.interval, args.timeout,
-                                              args.drain_timeout, args.stall_timeout, sample, event)
+                                              args.drain_timeout, args.stall_timeout, sample, event,
+                                              result_timeout_s=getattr(args, "result_timeout", 15))
                         record.update(result, status="complete")
+                        # show q1(a) accounting warnings immediately instead of hiding them in run json
+                        for warning in result.get("warnings", []):
+                            print(f"  warning: {warning}", flush=True)
                     except TransferError as error:
                         record.update(error.result, status="failed")
                         attempt.update(status="failed", error=str(error), failure_stage=error.stage)
                         print(f"  failed: {error}", flush=True)
+                        # q1(a) diagnostics show whether a timeout left queued payload or only control work
+                        if record.get("result_exchange_step"):
+                            print(f"  result step: {record['result_exchange_step']}", flush=True)
+                        snapshot = record.get("last_payload_snapshot")
+                        if snapshot:
+                            print(f"  pending payload: {record['pending_payload_bytes']} bytes; "
+                                  f"not yet sent: {snapshot['notsent_bytes']} bytes; "
+                                  f"unacknowledged: {snapshot['unacked_segments']} segments", flush=True)
                     # save each outcome immediately, and stop this candidate's set after any failed run
                     save_json(output / "runs" / (run["run_id"] + ".json"), record)
                     save_json(output / "manifest.json", manifest)
@@ -225,5 +239,9 @@ def run_experiment(args, root: Path) -> tuple[Path, bool]:
 
     # analysis reads only persisted measurements, so it is repeatable offline.
     analyze_results(output)
+    # make q1(a/b) review requirements visible even when the destination count is complete
+    quality = validation_report(manifest)
+    print(f"Validation: {quality['status']}; {quality['byte_count_warnings']} byte-count warnings; "
+          f"{len(quality['failed_runs'])} failed runs. See {output / 'validation.json'}", flush=True)
     # tell run.py where results are saved and whether it should return an incomplete status
     return output, bool(manifest["destination_shortfall"] or interrupted)

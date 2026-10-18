@@ -8,6 +8,9 @@ import math
 from pathlib import Path
 import statistics
 
+# share live and offline byte checks so older experiments expose the same shortfalls
+from .validation import validation_report
+
 
 # columns for summary table, with extra rtt and time-weighted results
 SUMMARY_FIELDS = [
@@ -114,6 +117,11 @@ def load_samples(output: Path, manifest: dict) -> list[dict]:
                     raise ValueError(f"invalid {key} in run {row['run_id']}")
             if row["sample_interval_actual_s"] <= 0:
                 raise ValueError("sampling intervals must be positive")
+            # catch a corrupted rate even when each individual csv field is finite and positive
+            # q1(c) requires the acknowledged-byte delta divided by the actual interval
+            expected_rate = 8 * row["bytes_acked_delta"] / row["sample_interval_actual_s"]
+            if not math.isclose(row["goodput_bps"], expected_rate, rel_tol=1e-9, abs_tol=1e-6):
+                raise ValueError(f"goodput disagrees with acked bytes and interval in run {row['run_id']}")
             # check the sampled algorithm against the recorded run before accepting the row
             record = accepted[row["run_id"]]
             if row["algorithm_actual"] != record["algorithm_actual"]:
@@ -171,6 +179,19 @@ def observation_notes(rows: list[dict], representative: dict, manifest: dict) ->
         "use linear interpolation at index (n-1)*p, also called type 7.",
         "",
     ]
+    # surface q1(a/b) accounting and selection limitations before interpreting q2 plots
+    quality = validation_report(manifest)
+    notes += ["## Validation and exclusions", "",
+              f"Validation status: {quality['status']}.",
+              f"Final-block byte-count warnings: {quality['byte_count_warnings']}.",
+              f"Unexplained byte-count mismatches in accepted runs: {quality['byte_count_errors']}.",
+              f"Byte checks unavailable: {quality['byte_count_unavailable']}.",
+              f"Failed runs: {len(quality['failed_runs'])}; completed but excluded runs: "
+              f"{len(quality['completed_but_excluded_runs'])}.",
+              "See validation.json for per-run byte counts, failure stages, and queue snapshots.",
+              "Offline audits preserve original acceptance; unexplained byte-count errors need review",
+              "before using an older experiment's tables. Final-block warnings do not prove data loss.",
+              quality["selection_note"] + ".", ""]
     # report the lack of completed data rather than inventing observations or figures
     if not representative:
         notes += ["No destination completed a full matched set; no measured figures were generated."]
@@ -215,6 +236,9 @@ def observation_notes(rows: list[dict], representative: dict, manifest: dict) ->
 def analyze_results(output: Path) -> dict:
     # read the saved configuration and measurements without opening any network connection
     manifest = json.loads((output / "manifest.json").read_text())
+    # audit persisted metadata too; do not retroactively change an older experiment's acceptance policy
+    quality = validation_report(manifest)
+    (output / "validation.json").write_text(json.dumps(quality, indent=2, allow_nan=False) + "\n")
     rows = load_samples(output, manifest)
     # group by destination/algorithm for pooled tables and by run id to preserve repetitions
     by_endpoint = defaultdict(list)
@@ -233,7 +257,8 @@ def analyze_results(output: Path) -> dict:
     plots = output / "plots"
     plots.mkdir(exist_ok=True)
     if not rows:
-        return {"accepted_runs": 0, "plots": []}
+        return {"accepted_runs": 0, "plots": [], "validation_status": quality["status"],
+                "validation_report": "validation.json"}
     plt = ensure_plotting()
     files = []
 
@@ -323,4 +348,5 @@ def analyze_results(output: Path) -> dict:
         save(fig, "representative-timeseries.pdf")
         save(scatter, "representative-scatter.pdf")
     # return a small output summary for run.py analyze to print
-    return {"accepted_runs": len(by_run), "plots": files}
+    return {"accepted_runs": len(by_run), "plots": files,
+            "validation_status": quality["status"], "validation_report": "validation.json"}

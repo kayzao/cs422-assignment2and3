@@ -12,6 +12,7 @@ import time
 from . import protocol as wire
 from .measurements import CounterSnapshot, measure_interval
 from .tcp_info import read_algorithm, read_tcp_info, select_algorithm
+from .validation import PAYLOAD_BLOCK_SIZE, assess_byte_count
 
 
 # fixed csv columns for q2(a), including ids, actual algorithm, explicit units, and phase
@@ -53,7 +54,7 @@ class TransferError(RuntimeError):
 def run_transfer(run: dict, duration_s: float, interval_s: float, timeout_s: float,
                  drain_timeout_s: float, stall_timeout_s: float, sample, event,
                  reader=read_tcp_info, algorithm_selector=select_algorithm,
-                 algorithm_reader=read_algorithm) -> dict:
+                 algorithm_reader=read_algorithm, result_timeout_s: float = 15) -> dict:
     """One forward stream, bounded protocol operations, and no iperf executable.
 
     sample/event callbacks write raw data as it arrives, preserving partial runs.
@@ -62,15 +63,16 @@ def run_transfer(run: dict, duration_s: float, interval_s: float, timeout_s: flo
     # track both sockets for cleanup and keep the current stage for meaningful failure logs
     control = data = None
     stage = "control_connect"
-    result = {"started_utc": utc_now(), "protocol_complete": False}
+    result = {"started_utc": utc_now(), "protocol_complete": False, "warnings": []}
     # each blocking control operation has a deadline. this outer deadline also
     # bounds the whole attempt if the peer repeatedly changes protocol stages.
-    overall_deadline = time.monotonic() + duration_s + drain_timeout_s + 8 * timeout_s
+    overall_deadline = (time.monotonic() + duration_s + drain_timeout_s
+                        + 8 * timeout_s + 4 * result_timeout_s)
 
     # gives the next control operation its deadline without exceeding the attempt's time budget
     # used during setup and shutdown for q1(a) timeout handling
-    def deadline():
-        return min(overall_deadline, time.monotonic() + timeout_s)
+    def deadline(seconds=None):
+        return min(overall_deadline, time.monotonic() + (timeout_s if seconds is None else seconds))
 
     # adds a timestamp before handing a protocol event to runner.py for saving
     # used for state changes and failures so q1(a) attempts can be inspected later
@@ -93,7 +95,7 @@ def run_transfer(run: dict, duration_s: float, interval_s: float, timeout_s: flo
         # and integer duration. our single-stream settings use that server-readable format
         # source: iperf3 3.17.1, iperf_api.c
         parameters = {"tcp": True, "omit": 0, "time": math.ceil(duration_s),
-                      "num": 0, "blockcount": 0, "parallel": 1, "len": 131072,
+                      "num": 0, "blockcount": 0, "parallel": 1, "len": PAYLOAD_BLOCK_SIZE,
                       "client_version": "3.17.1-compatible-netlab"}
         wire.send_json(control, parameters, deadline())
         record_event({"event": "parameters_sent", "parameters": parameters})
@@ -153,6 +155,7 @@ def run_transfer(run: dict, duration_s: float, interval_s: float, timeout_s: flo
                 "goodput_bps": None, "retrans_segments_delta": 0})
         last_ack_progress = start
         last_seen_acked_total = baseline_info["bytes_acked_total"]
+        sent = 0
 
         # reads data-socket counters, calculates interval goodput, and sends the row to the logger
         # called during transfer and drain; supplies the q1(c) and q2(a) measurements
@@ -177,6 +180,19 @@ def run_transfer(run: dict, duration_s: float, interval_s: float, timeout_s: flo
                     "goodput_bps": measured.goodput_bps,
                     "retrans_segments_delta": measured.retrans_segments_delta,
                     "phase": phase})
+            # keep queue and ack progress even if the drain or control exchange later times out
+            # q1(a) failures can then distinguish queued bytes from fully delivered payload
+            acked = current.bytes_acked_total - baseline_info["bytes_acked_total"]
+            result.update(payload_bytes_sent=sent, payload_bytes_acked=acked,
+                          pending_payload_bytes=max(0, sent - acked))
+            result["last_payload_snapshot"] = {
+                "elapsed_s": current.elapsed_s, "phase": phase,
+                "notsent_bytes": info["notsent_bytes"], "unacked_segments": info["unacked_segments"],
+                "snd_cwnd_segments": info["snd_cwnd_segments"], "rtt_us": info["rtt_us"],
+                "total_retrans_segments": info["total_retrans_segments"],
+            }
+            if phase == "drain":
+                result["drain_duration_s"] = current.elapsed_s - result["active_transfer_s"]
             # use this snapshot as the next baseline so intervals do not count the same bytes twice
             previous = current
             return info
@@ -184,8 +200,7 @@ def run_transfer(run: dict, duration_s: float, interval_s: float, timeout_s: flo
         # send until the configured end time; nonblocking writes leave time for sampling and control
         stage = "payload_transfer"
         data.setblocking(False)
-        payload = os.urandom(131072)  # reuse a buffer; avoid allocation in every send.
-        sent = 0
+        payload = os.urandom(PAYLOAD_BLOCK_SIZE)  # reuse a buffer; avoid allocation in every send.
         next_sample = start + interval_s
         end = start + duration_s
         while time.monotonic() < end:
@@ -228,6 +243,7 @@ def run_transfer(run: dict, duration_s: float, interval_s: float, timeout_s: flo
                 if count <= 0:
                     raise wire.ProtocolError("data socket stopped accepting bytes")
                 sent += count
+                result["payload_bytes_sent"] = sent
 
         # keep the final active interval, even when it is shorter than the requested sampling interval
         info = take_sample("transfer")
@@ -251,10 +267,20 @@ def run_transfer(run: dict, duration_s: float, interval_s: float, timeout_s: flo
         result["payload_bytes_acked"] = info["bytes_acked_total"] - baseline_info["bytes_acked_total"]
         result["drain_duration_s"] = previous.elapsed_s - result["active_transfer_s"]
 
-        # follow the result-exchange order checked in iperf_server_api.c and iperf_api.c
+        # signal payload eof after the last ack sample, before requesting server results
+        # net.c's nread can wait for the remainder of a block while the data socket stays open
+        # shutdown keeps the socket available for cleanup and leaves fin bytes outside q1(c) samples
+        stage = "payload_shutdown"
+        data.shutdown(socket.SHUT_WR)
+        result["data_write_shutdown"] = True
+        record_event({"event": "payload_write_shutdown"})
+
+        # keep result waits separate from connection timeouts; public receivers may need time
+        # to finish their last read. record the exact q1(a) step rather than a generic timeout
         stage = "result_exchange"
-        wire.send_state(control, wire.TEST_END, deadline(), record_event)
-        wire.expect_state(control, wire.EXCHANGE_RESULTS, deadline(), record_event)
+        result["result_exchange_step"] = "waiting_for_exchange_results"
+        wire.send_state(control, wire.TEST_END, deadline(result_timeout_s), record_event)
+        wire.expect_state(control, wire.EXCHANGE_RESULTS, deadline(result_timeout_s), record_event)
         # prepare cpu and retransmission totals for the standard iperf3 result object
         process_end = os.times()
         elapsed = max(previous.elapsed_s, 1e-9)
@@ -276,20 +302,35 @@ def run_transfer(run: dict, duration_s: float, interval_s: float, timeout_s: flo
                          "omitted_errors": 0, "omitted_packets": 0,
                          "start_time": 0, "end_time": previous.elapsed_s}],
         }
-        wire.send_json(control, client_results, deadline())
+        result["result_exchange_step"] = "sending_client_results"
+        wire.send_json(control, client_results, deadline(result_timeout_s))
         # require a valid receiving stream result before declaring protocol completion
-        server_results = wire.recv_json(control, deadline())
+        result["result_exchange_step"] = "waiting_for_server_results"
+        server_results = wire.recv_json(control, deadline(result_timeout_s))
+        stage = "result_validation"
+        result["server_results"] = server_results
         streams = server_results.get("streams")
         if not isinstance(streams, list) or len(streams) != 1 or not isinstance(streams[0], dict):
             raise wire.ProtocolError("server returned no valid single-stream results")
         received = streams[0].get("bytes")
-        if (streams[0].get("id") != 1 or isinstance(received, bool)
-                or not isinstance(received, (int, float)) or received <= 0):
+        if isinstance(streams[0].get("id"), bool) or streams[0].get("id") != 1:
             raise wire.ProtocolError("server did not report receiving payload on stream 1")
-        result["server_results"] = server_results
+        check = assess_byte_count(sent, received)
         result["server_payload_bytes_received"] = received
-        result["server_byte_count_matches_sender"] = received == sent
-        wire.expect_state(control, wire.DISPLAY_RESULTS, deadline(), record_event)
+        result["server_byte_count_check"] = check
+        result["server_byte_count_matches_sender"] = check["status"] == "exact"
+        record_event({"event": "server_byte_count_checked", **check})
+        # q1(a) requires meaningful receiver results; never accept arbitrary positive counts
+        # only the final-block pattern is retained with an explicit warning for report review
+        if check["status"] == "mismatch":
+            raise wire.ProtocolError(check["reason"])
+        if check["status"] == "partial_block":
+            result["warnings"].append(check["reason"])
+            record_event({"event": "warning", "reason": check["reason"]})
+        stage = "result_exchange"
+        result["result_exchange_step"] = "waiting_for_display_results"
+        wire.expect_state(control, wire.DISPLAY_RESULTS, deadline(result_timeout_s), record_event)
+        result["result_exchange_step"] = "complete"
         # checked iperf_client_end and the server's done-state handling to confirm
         # the data-socket close and final completion message used for q1(a)(v)
         # source: iperf3 3.17.1, iperf_client_api.c
@@ -297,9 +338,9 @@ def run_transfer(run: dict, duration_s: float, interval_s: float, timeout_s: flo
         stage = "test_termination"
         data.close()
         data = None
-        wire.send_state(control, wire.IPERF_DONE, deadline(), record_event)
+        wire.send_state(control, wire.IPERF_DONE, deadline(result_timeout_s), record_event)
         # the standard server closes its control connection after processing done.
-        control.settimeout(wire.remaining(deadline()))
+        control.settimeout(wire.remaining(deadline(result_timeout_s)))
         if control.recv(1):
             raise wire.ProtocolError("unexpected bytes after IPERF_DONE")
         # only mark success after result exchange, the final done message, and server closure
@@ -308,8 +349,14 @@ def run_transfer(run: dict, duration_s: float, interval_s: float, timeout_s: flo
         return result
     # save the failure stage and partial metadata so runner.py can log and replace the destination
     except (OSError, RuntimeError, ValueError, OverflowError) as error:
+        if "payload_bytes_sent" in result:
+            result["pending_payload_bytes"] = max(0, result["payload_bytes_sent"]
+                                                   - result.get("payload_bytes_acked", 0))
         result.update(finished_utc=utc_now(), failure_stage=stage, error=str(error))
-        record_event({"event": "failure", "stage": stage, "reason": str(error)})
+        record_event({"event": "failure", "stage": stage, "reason": str(error),
+                      "result_exchange_step": result.get("result_exchange_step"),
+                      "pending_payload_bytes": result.get("pending_payload_bytes"),
+                      "last_payload_snapshot": result.get("last_payload_snapshot")})
         raise TransferError(stage, error, result) from error
     # close any remaining sockets after success or failure
     finally:

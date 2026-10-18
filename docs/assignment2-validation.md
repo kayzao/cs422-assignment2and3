@@ -46,7 +46,7 @@ outside this audit's completion scope.
 
 ## What was actually verified locally
 
-- All **23 tests passed** under Python 3.9 and Python 3.12 with the optional
+- All **32 tests passed** under Python 3.9 and Python 3.12 with the optional
   official-server test enabled. Dependency consistency checks also passed.
 - An unmodified official iperf3 3.17.1 server completed setup, data transfer,
   result exchange, and termination with this Python client. Only its server
@@ -61,6 +61,12 @@ outside this audit's completion scope.
 - Nonfinite JSON overflow and stall detection with long sampling intervals were
   corrected during the audit. Failure, replacement, shortfall, and interruption
   behavior have focused checks.
+- Transfer-end checks now cover data EOF, a separate final-result timeout,
+  final-block accounting warnings, rejected unexplained byte discrepancies,
+  and preserved queue diagnostics after drain failures. Offline analysis
+  rechecks saved rate arithmetic and writes `validation.json` for new and old
+  experiments. The changed termination behavior still needs public-server
+  validation on the Linux execution machine.
 
 ## Required Ubuntu execution
 
