@@ -111,12 +111,27 @@ in the final report.
 
 ## Figures and observations
 
-Every accepted destination has a goodput time-series PDF. The representative
+Every accepted destination has a goodput time-series PDF with one algorithm per
+row and one repetition per column. Each panel contains the original interval
+measurements from that run, with no smoothing. Both axes are shared within the
+destination so algorithm and repetition comparisons use the same scales.
+The representative
 destination is the first completed matched set, selected without comparing its
 performance. Its four time-series panels show cwnd, RTT, interval retransmissions,
 and goodput. Three scatter panels compare cwnd, RTT, and retransmissions against
 goodput. Different algorithms use consistent row scales, and repetitions are
 separate traces rather than one concatenated timeline.
+
+Scatterplots retain every interval sample and overlay a dashed ordinary
+least-squares line separately for each repetition, using its point color. Each
+line is restricted to that repetition's observed x range; a run with constant
+x values has no fitted line. Fits describe same-interval linear associations,
+not causal effects or a congestion-control model. They can be influenced by
+outliers, startup, recovery, and unequal sampling of network states. In particular,
+retransmissions are often zero and their effects may appear in later intervals,
+so a flat line does not establish that loss has no effect. Successive samples
+are also temporally dependent; the lines do not provide statistical significance
+or justify treating the samples as independent observations.
 
 For Q2(c), write your metric explanations and interpretation of anomalies and
 congestion-avoidance behavior in the final report, using the saved measurements,

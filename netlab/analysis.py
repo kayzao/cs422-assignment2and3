@@ -86,6 +86,22 @@ def write_table(path: Path, rows: list[dict], fields: list[str]) -> None:
         writer.writerows(rows)
 
 
+# fits a descriptive straight line when a scatterplot has at least two distinct x values
+# used separately for each repetition in q2(b), so different runs are not pooled into one trend
+def linear_trend(x: list[float], y: list[float]):
+    if len(x) < 2:
+        return None
+    # ordinary least squares minimizes squared vertical distances from the measured points
+    mean_x, mean_y = statistics.mean(x), statistics.mean(y)
+    spread = sum((value - mean_x) ** 2 for value in x)
+    if spread == 0:
+        return None
+    slope = sum((a - mean_x) * (b - mean_y) for a, b in zip(x, y)) / spread
+    # stay within the observed range instead of extrapolating beyond the measurements
+    bounds = [min(x), max(x)]
+    return bounds, [mean_y + slope * (value - mean_x) for value in bounds]
+
+
 # loads saved samples, keeps accepted transfer intervals, and checks their numeric values
 # called before analysis so q1(c) and q2 results exclude incomplete runs and non-transfer phases
 def load_samples(output: Path, manifest: dict) -> list[dict]:
@@ -159,6 +175,11 @@ def analyze_results(output: Path) -> dict:
                 "validation_report": "validation.json"}
     plt = ensure_plotting()
     files = []
+    # keep repetition colors consistent between destination, time-series, and scatter figures
+    repetitions = sorted({int(row["repetition"]) for row in rows})
+    palette = plt.rcParams["axes.prop_cycle"].by_key()["color"]
+    repetition_colors = {rep: palette[index % len(palette)]
+                         for index, rep in enumerate(repetitions)}
 
     # saves one pdf, closes its figure, and records the output filename
     # called for each q1(c) and q2(b) figure to keep output handling consistent
@@ -171,19 +192,38 @@ def analyze_results(output: Path) -> dict:
     # make q1(c)'s goodput-over-time figure for every accepted destination
     destinations = sorted({(row["destination_host"], row["destination_port"]) for row in rows})
     for index, endpoint in enumerate(destinations, 1):
-        fig, ax = plt.subplots(figsize=(9, 4), layout="constrained")
-        # draw each repetition as its own trace instead of joining different runs into one timeline
-        for run_id, group in sorted(by_run.items()):
-            if (group[0]["destination_host"], group[0]["destination_port"]) != endpoint:
-                continue
+        endpoint_runs = [group for _, group in sorted(by_run.items())
+                         if (group[0]["destination_host"], group[0]["destination_port"]) == endpoint]
+        algorithms = sorted({group[0]["algorithm_actual"] for group in endpoint_runs})
+        endpoint_reps = sorted({int(group[0]["repetition"]) for group in endpoint_runs})
+        # one algorithm per row and repetition per column removes overlapping curves for q1(c)
+        # share both axes across the destination so panel size cannot exaggerate a difference
+        fig, axes = plt.subplots(len(algorithms), len(endpoint_reps), squeeze=False,
+                                 figsize=(max(6, 4 * len(endpoint_reps)), 2.8 * len(algorithms)),
+                                 sharex=True, sharey=True, layout="constrained")
+        fig.suptitle(f"Goodput — {endpoint[0]}:{endpoint[1]}")
+        for row_index, algorithm in enumerate(algorithms):
+            for column, repetition in enumerate(endpoint_reps):
+                ax = axes[row_index, column]
+                ax.grid(alpha=0.25)
+                if row_index == 0:
+                    ax.set_title(f"Repetition {repetition}")
+                if column == 0:
+                    ax.set_ylabel(f"{algorithm}\nGoodput (Mbit/s)")
+                if row_index == len(algorithms) - 1:
+                    ax.set_xlabel("Elapsed time (s)")
+                if not any(group[0]["algorithm_actual"] == algorithm
+                           and int(group[0]["repetition"]) == repetition for group in endpoint_runs):
+                    ax.text(0.5, 0.5, "No accepted run", transform=ax.transAxes, ha="center")
+        # retain the raw interval values and their actual timestamps; no smoothing or averaging
+        for group in endpoint_runs:
             group = sorted(group, key=lambda row: row["elapsed_s"])
+            repetition = int(group[0]["repetition"])
+            ax = axes[algorithms.index(group[0]["algorithm_actual"]), endpoint_reps.index(repetition)]
             ax.plot([row["elapsed_s"] for row in group], [row["goodput_bps"]/1e6 for row in group],
-                    label=f"{group[0]['algorithm_actual']} rep {int(group[0]['repetition'])}", alpha=0.8)
-        ax.set(title=f"Goodput — {endpoint[0]}:{endpoint[1]}", xlabel="Elapsed time (s)", ylabel="Goodput (Mbit/s)")
-        ax.grid(alpha=0.25)
-        ax.set_xlim(left=0)
-        ax.set_ylim(bottom=0)
-        ax.legend(fontsize=8)
+                    color=repetition_colors[repetition], linewidth=1, alpha=0.85)
+        axes[0, 0].set_xlim(left=0)
+        axes[0, 0].set_ylim(bottom=0)
         save(fig, f"goodput-destination-{index:03d}.pdf")
 
     # select the same representative destination for all q2 figures and later q3 comparisons
@@ -200,7 +240,7 @@ def analyze_results(output: Path) -> dict:
                                             figsize=(5*len(algorithms), 9), sharex="row",
                                             sharey="row", layout="constrained")
         fig.suptitle(title)
-        scatter.suptitle(title)
+        scatter.suptitle(title + "\nDashed: per-repetition linear fit (descriptive association)")
         # give each algorithm a column and each repetition a separately labeled trace or point set
         for column, algorithm in enumerate(algorithms):
             for run_id, group in sorted(rep_runs.items()):
@@ -208,11 +248,12 @@ def analyze_results(output: Path) -> dict:
                     continue
                 group = sorted(group, key=lambda row: row["elapsed_s"])
                 label = f"rep {int(group[0]['repetition'])}"
+                color = repetition_colors[int(group[0]["repetition"])]
                 # plot cwnd, rtt, interval retransmissions, and goodput against elapsed time for q2(b)(i)
                 for row_index, (key, ylabel, scale) in enumerate(METRICS):
                     ax = axes[row_index, column]
                     ax.plot([row["elapsed_s"] for row in group], [row[key]*scale for row in group],
-                            label=label, alpha=0.8)
+                            label=label, color=color, alpha=0.8)
                     ax.set(ylabel=ylabel, title=algorithm if row_index == 0 else None)
                     ax.grid(alpha=0.25)
                     if row_index == 3:
@@ -220,8 +261,14 @@ def analyze_results(output: Path) -> dict:
                 # plot cwnd, rtt, and the loss proxy against goodput for q2(b)(ii)
                 for row_index, (key, xlabel, scale) in enumerate(METRICS[:3]):
                     ax = scatter_axes[row_index, column]
-                    ax.scatter([row[key]*scale for row in group], [row["goodput_bps"]/1e6 for row in group],
-                               label=label, alpha=0.6, s=12)
+                    x = [row[key]*scale for row in group]
+                    y = [row["goodput_bps"]/1e6 for row in group]
+                    ax.scatter(x, y, label=label, color=color, alpha=0.35, s=12)
+                    # add a matching dashed fit without replacing samples or implying causation
+                    # a constant loss counter has no x variation, so no fit is drawn in that case
+                    trend = linear_trend(x, y)
+                    if trend is not None:
+                        ax.plot(*trend, color=color, linestyle="--", linewidth=1.8)
                     ax.set(xlabel=xlabel, ylabel="Goodput (Mbit/s)",
                            title=algorithm if row_index == 0 else None)
                     ax.grid(alpha=0.25)

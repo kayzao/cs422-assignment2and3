@@ -105,6 +105,13 @@ Regenerate output offline:
 python3 run.py analyze --results results/first-cubic
 ```
 
+Per-destination goodput PDFs separate algorithms into rows and repetitions into
+columns, with shared axes and the original interval data. Representative scatter
+plots include dashed linear fits for each repetition in its matching color.
+These show descriptive associations; they do not establish causation or rule out
+delayed effects. Re-analysis replaces generated plots and tables in that results
+directory while preserving the raw measurements; it does not rerun transfers.
+
 `validation.json` distinguishes exact sender/server byte agreement from a
 server count ending at the last complete 128 KiB block. The latter produces a
 visible warning; other byte-count mismatches fail new runs and trigger destination

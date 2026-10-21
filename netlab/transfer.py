@@ -45,7 +45,7 @@ class TransferError(RuntimeError):
         self.result = result
 
 
-# traced the client and server state handlers to work out the full q1(a) sequence,
+# traced the client and server state handlers to work out the full sequence,
 # especially when data may start and which side sends results first
 # source: iperf3 3.17.1, iperf_client_api.c
 # source: iperf3 3.17.1, iperf_server_api.c
@@ -79,7 +79,7 @@ def run_transfer(run: dict, duration_s: float, interval_s: float, timeout_s: flo
     def record_event(value):
         event({"timestamp_utc": utc_now(), **value})
 
-    # start q1(a) by opening the control connection and sending the session cookie
+    # Open the control connection and sends the session cookie
     try:
         control = wire.connect_control(run["destination_host"], run["destination_port"], timeout_s)
         result["resolved_peer_ip"] = control.getpeername()[0]
@@ -88,7 +88,7 @@ def run_transfer(run: dict, duration_s: float, interval_s: float, timeout_s: flo
         # wait for parameter exchange before sending the json settings
         stage = "parameter_exchange"
         wire.expect_state(control, wire.PARAM_EXCHANGE, deadline(), record_event)
-        # a2 q1(a): speak iperf3's json negotiation, not an arbitrary tcp upload.
+        # speak iperf3's json negotiation, not an arbitrary tcp upload.
         # the server stores integer seconds; our monotonic timer controls the
         # exact requested duration even for a fractional development test.
         # checked send_parameters and get_parameters for the json field names
