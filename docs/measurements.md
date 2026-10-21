@@ -115,6 +115,15 @@ Every accepted destination has a goodput time-series PDF with one algorithm per
 row and one repetition per column. Each panel contains the original interval
 measurements from that run, with no smoothing. Both axes are shared within the
 destination so algorithm and repetition comparisons use the same scales.
+Each goodput panel has a dashed arithmetic-mean line and a dotted median line,
+with both values labeled in Mbit/s. Each representative time-series panel lists
+the mean and median separately for every repetition in its legend, using the
+axis units. All of these summaries give equal weight to each accepted active
+transfer interval, including startup and zero values. The goodput values agree
+with the per-run arithmetic mean and median in `per_run_summary.csv`, rather
+than its separate time-weighted mean. Retransmission summaries count segments
+per sampled interval, not a loss probability; their median can be zero despite
+occasional loss and recovery.
 The representative
 destination is the first completed matched set, selected without comparing its
 performance. Its four time-series panels show cwnd, RTT, interval retransmissions,

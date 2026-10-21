@@ -220,8 +220,17 @@ def analyze_results(output: Path) -> dict:
             group = sorted(group, key=lambda row: row["elapsed_s"])
             repetition = int(group[0]["repetition"])
             ax = axes[algorithms.index(group[0]["algorithm_actual"]), endpoint_reps.index(repetition)]
-            ax.plot([row["elapsed_s"] for row in group], [row["goodput_bps"]/1e6 for row in group],
+            goodput = [row["goodput_bps"] / 1e6 for row in group]
+            ax.plot([row["elapsed_s"] for row in group], goodput,
                     color=repetition_colors[repetition], linewidth=1, alpha=0.85)
+            # show q1(c)'s per-sample arithmetic mean and median for this run in axis units
+            # these summarize the original intervals, including startup and zero-goodput samples
+            mean, median = statistics.mean(goodput), statistics.median(goodput)
+            ax.axhline(mean, color="0.25", linestyle="--", linewidth=1,
+                       label=f"Mean: {mean:.2f}")
+            ax.axhline(median, color="0.25", linestyle=":", linewidth=1.2,
+                       label=f"Median: {median:.2f}")
+            ax.legend(fontsize=7, loc="upper right", framealpha=0.85)
         axes[0, 0].set_xlim(left=0)
         axes[0, 0].set_ylim(bottom=0)
         save(fig, f"goodput-destination-{index:03d}.pdf")
@@ -239,7 +248,7 @@ def analyze_results(output: Path) -> dict:
         scatter, scatter_axes = plt.subplots(3, len(algorithms), squeeze=False,
                                             figsize=(5*len(algorithms), 9), sharex="row",
                                             sharey="row", layout="constrained")
-        fig.suptitle(title)
+        fig.suptitle(title + "\nLegends: per-sample mean and median (axis units)")
         scatter.suptitle(title + "\nDashed: per-repetition linear fit (descriptive association)")
         # give each algorithm a column and each repetition a separately labeled trace or point set
         for column, algorithm in enumerate(algorithms):
@@ -252,8 +261,13 @@ def analyze_results(output: Path) -> dict:
                 # plot cwnd, rtt, interval retransmissions, and goodput against elapsed time for q2(b)(i)
                 for row_index, (key, ylabel, scale) in enumerate(METRICS):
                     ax = axes[row_index, column]
-                    ax.plot([row["elapsed_s"] for row in group], [row[key]*scale for row in group],
-                            label=label, color=color, alpha=0.8)
+                    values = [row[key] * scale for row in group]
+                    # report each run separately instead of pooling repetitions or adding six lines
+                    # q2(b)'s traces remain visible; the legend summarizes each metric in its axis units
+                    mean, median = statistics.mean(values), statistics.median(values)
+                    ax.plot([row["elapsed_s"] for row in group], values,
+                            label=f"{label}: mean {mean:.2f}, median {median:.2f}",
+                            color=color, alpha=0.8)
                     ax.set(ylabel=ylabel, title=algorithm if row_index == 0 else None)
                     ax.grid(alpha=0.25)
                     if row_index == 3:
@@ -272,7 +286,8 @@ def analyze_results(output: Path) -> dict:
                     ax.set(xlabel=xlabel, ylabel="Goodput (Mbit/s)",
                            title=algorithm if row_index == 0 else None)
                     ax.grid(alpha=0.25)
-            axes[0, column].legend(fontsize=8)
+            for row_index in range(len(METRICS)):
+                axes[row_index, column].legend(fontsize=7, loc="upper right", framealpha=0.85)
             scatter_axes[0, column].legend(fontsize=8)
         # all recorded metrics are nonnegative. give an all-zero loss signal a
         # 0..1 axis instead of matplotlib's default negative fractional counts.

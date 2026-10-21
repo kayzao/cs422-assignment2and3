@@ -106,8 +106,12 @@ python3 run.py analyze --results results/first-cubic
 ```
 
 Per-destination goodput PDFs separate algorithms into rows and repetitions into
-columns, with shared axes and the original interval data. Representative scatter
-plots include dashed linear fits for each repetition in its matching color.
+columns, with shared axes and the original interval data.
+Goodput panels label the mean and median with horizontal reference lines;
+representative time-series legends list these values for each repetition and
+metric. These are arithmetic per-sample summaries in the displayed axis units.
+Representative scatter plots include dashed linear fits for each repetition in
+its matching color.
 These show descriptive associations; they do not establish causation or rule out
 delayed effects. Re-analysis replaces generated plots and tables in that results
 directory while preserving the raw measurements; it does not rerun transfers.
