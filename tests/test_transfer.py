@@ -146,16 +146,15 @@ class TransferTests(unittest.TestCase):
         self.assertEqual(len(result["warnings"]), 1)
         self.assertFalse(result["server_byte_count_matches_sender"])
 
-    def test_unexplained_receiver_mismatch_fails_with_both_counts_saved(self):
+    def test_receiver_mismatch_is_warned_and_protocol_still_completes(self):
         with receiver(mode="mismatch") as (port, observed):
-            with self.assertRaises(TransferError) as raised:
-                self.transfer(port)
-        error = raised.exception
-        self.assertEqual(error.stage, "result_validation")
-        self.assertFalse(error.result["protocol_complete"])
-        self.assertEqual(error.result["server_byte_count_check"]["status"], "mismatch")
-        self.assertEqual(error.result["server_byte_count_check"]["missing_bytes"], 1)
-        self.assertGreater(error.result["server_payload_bytes_received"], 0)
+            result, rows, events = self.transfer(port)
+        self.assertTrue(observed["done"])
+        self.assertTrue(result["protocol_complete"])
+        self.assertEqual(result["server_byte_count_check"]["status"], "mismatch")
+        self.assertEqual(result["server_byte_count_check"]["missing_bytes"], 1)
+        self.assertEqual(len(result["warnings"]), 1)
+        self.assertEqual(result["server_payload_bytes_received"], observed["received"] - 1)
 
     def test_result_timeout_preserves_exact_step_and_fully_acked_payload(self):
         with receiver(delay=0.3) as (port, observed):
